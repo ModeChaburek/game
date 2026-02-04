@@ -4,7 +4,7 @@ from settings import SCREEN_WIDTH, SCREEN_HEIGHT
 
 class MenuView(arcade.View):
     def on_show(self):
-        arcade.set_background_color(arcade.color.BLACK)
+        arcade.set_background_color(arcade.color.WHITE)
 
     def on_draw(self):
         self.clear()
