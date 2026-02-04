@@ -1,6 +1,7 @@
 import arcade
 from arcade.gui import *
 from settings import SCREEN_WIDTH, SCREEN_HEIGHT
+from view.game_view import GameView
 
 
 class MenuView(arcade.View):
@@ -39,6 +40,8 @@ class MenuView(arcade.View):
 
         @play_button.event("on_click")
         def on_play_click(event):
+            game_view = GameView()
+            self.window.show_view(game_view)
             print("Играть нажато")
 
         @setting_button.event("on_click")
@@ -47,7 +50,7 @@ class MenuView(arcade.View):
 
         @exit_button.event("on_click")
         def on_exit_click(event):
-            print("Пока пока")
+            arcade.close_window()
 
         self.box_layout.add(play_button)
         self.box_layout.add(setting_button)
