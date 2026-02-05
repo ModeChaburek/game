@@ -2,6 +2,7 @@ import arcade
 from arcade.gui import *
 from settings import SCREEN_WIDTH, SCREEN_HEIGHT
 from view.game_view import GameView
+from view.setting_menu import Setting_Menu_View
 
 
 class MenuView(arcade.View):
@@ -46,6 +47,8 @@ class MenuView(arcade.View):
 
         @setting_button.event("on_click")
         def on_settings_click(event):
+            setting_menu_view = Setting_Menu_View()
+            self.window.show_view(setting_menu_view)
             print("Настройки")
 
         @exit_button.event("on_click")
