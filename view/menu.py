@@ -73,3 +73,4 @@ class MenuView(arcade.View):
 
     def on_hide_view(self):
         self.manager.disable()
+
