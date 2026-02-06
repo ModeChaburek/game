@@ -2,7 +2,7 @@ import arcade
 from arcade.gui import *
 from settings import SCREEN_WIDTH, SCREEN_HEIGHT
 from view.game_view import GameView
-from view.setting_menu import Setting_Menu_View
+from view.setting_view import Setting_Menu_View
 
 
 class MenuView(arcade.View):
