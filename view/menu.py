@@ -8,7 +8,7 @@ from view.setting_view import Setting_Menu_View
 class MenuView(arcade.View):
 
     def __init__(self):
-        super().__init__()  # ← ОБЯЗАТЕЛЬНО
+        super().__init__()  
 
         arcade.set_background_color(arcade.color.GRAY)
 
@@ -63,7 +63,7 @@ class MenuView(arcade.View):
         self.clear()
 
         arcade.draw_text(
-            "Basket Random",
+            "Ащщеифдд",
             SCREEN_WIDTH // 2,
             SCREEN_HEIGHT // 2 + 200,
             arcade.color.PINK,

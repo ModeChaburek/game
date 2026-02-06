@@ -1,8 +1,6 @@
 import arcade
 from settings import SCREEN_WIDTH, SCREEN_HEIGHT
 from menus.pause_menu import PauseMenu
-from view.setting_view import Setting_Menu_View
-from view.menu import MenuView
 
 
 class GameView(arcade.View):
@@ -57,7 +55,9 @@ class GameView(arcade.View):
         self.pause_menu.manager.disable()
 
     def go_to_menu(self):
+        from view.menu import MenuView
         self.window.show_view(MenuView())
 
     def go_to_settings(self):
+        from view.setting_view import Setting_Menu_View
         self.window.show_view(Setting_Menu_View())
