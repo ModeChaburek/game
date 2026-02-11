@@ -1,7 +1,16 @@
+import os
+import sys
+
+ROOT_DIR = os.path.dirname(os.path.dirname(__file__))
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
+
 import arcade
 import settings
 from settings import SCREEN_WIDTH, SCREEN_HEIGHT
 from menus.pause_menu import PauseMenu
+from view.field import PixelField
+from view.ball import Ball
 
 
 class GameView(arcade.View):
@@ -26,6 +35,8 @@ class GameView(arcade.View):
             on_menu=self.go_to_menu,
             on_settings=self.go_to_settings
         )
+        self.field = PixelField(SCREEN_WIDTH, SCREEN_HEIGHT)
+        self.ball = Ball(self.field.center[0], self.field.center[1])
 
     def on_show_view(self):
         arcade.set_background_color(arcade.color.BLACK)
@@ -57,9 +68,15 @@ class GameView(arcade.View):
         if not self.paused:
             self.time += delta_time
             self.time_text.text = f"Время: {int(self.time)}"
+            if self.ball:
+                self.ball.update(delta_time, self.field.bounds)
 
     def on_draw(self):
         self.clear()
+
+        self.field.draw()
+        if self.ball:
+            self.ball.draw()
 
         self.time_text.draw()
 
@@ -68,7 +85,6 @@ class GameView(arcade.View):
                 0, SCREEN_WIDTH, 0, SCREEN_HEIGHT, (0, 0, 0, 180)
             )
             self.pause_menu.manager.draw()
-
 
     def on_key_press(self, key, modifiers):
         if key == arcade.key.ESCAPE:
