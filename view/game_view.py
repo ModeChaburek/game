@@ -56,29 +56,17 @@ class GameView(arcade.View):
     def _spawn_bounds(self, side, radius):
         left, right, bottom, top = self.field.bounds
         mid_x = (left + right) / 2
-        margin = radius * 2
+        margin = radius
 
         if side == "left":
-            x_min = left + radius + margin
-            x_max = mid_x - radius - margin
+            x_min = left + margin
+            x_max = mid_x - margin
         else:
-            x_min = mid_x + radius + margin
-            x_max = right - radius - margin
+            x_min = mid_x + margin
+            x_max = right - margin
 
-        y_min = bottom + radius + margin
-        y_max = top - radius - margin
-
-        if x_max <= x_min:
-            if side == "left":
-                x_min = left + radius
-                x_max = mid_x - radius
-            else:
-                x_min = mid_x + radius
-                x_max = right - radius
-
-        if y_max <= y_min:
-            y_min = bottom + radius
-            y_max = top - radius
+        y_min = bottom + margin
+        y_max = top - margin
 
         return x_min, x_max, y_min, y_max
 
@@ -91,6 +79,16 @@ class GameView(arcade.View):
 
     def _random_positions(self, side, count, radius):
         x_min, x_max, y_min, y_max = self._spawn_bounds(side, radius)
+        return self._positions_in_bounds(
+            x_min,
+            x_max,
+            y_min,
+            y_max,
+            count,
+            radius
+        )
+
+    def _positions_in_bounds(self, x_min, x_max, y_min, y_max, count, radius):
         if x_max <= x_min or y_max <= y_min:
             return []
 
@@ -98,7 +96,7 @@ class GameView(arcade.View):
         min_distance_sq = min_distance * min_distance
         positions = []
         attempts = 0
-        max_attempts = 5000
+        max_attempts = 15000
 
         while len(positions) < count and attempts < max_attempts:
             attempts += 1
@@ -111,11 +109,6 @@ class GameView(arcade.View):
                 for px, py in positions
             ):
                 positions.append((x, y))
-
-        if len(positions) < count:
-            positions = self._grid_positions(
-                x_min, x_max, y_min, y_max, count, min_distance, radius
-            )
 
         return positions
 
@@ -152,17 +145,21 @@ class GameView(arcade.View):
         players = []
         blue_color, red_color = self._team_colors()
 
-        max_radius = 18
+        target_radius = self.ball.radius
+        max_radius = target_radius
         min_radius = 4
         chosen_radius = min_radius
         blue_positions = []
         red_positions = []
 
         for radius in range(max_radius, min_radius - 1, -1):
-            blue_positions = self._random_positions("left", 5, radius)
-            red_positions = self._random_positions("right", 5, radius)
+            for _ in range(6):
+                blue_positions = self._random_positions("left", 5, radius)
+                red_positions = self._random_positions("right", 5, radius)
+                if len(blue_positions) == 5 and len(red_positions) == 5:
+                    chosen_radius = radius
+                    break
             if len(blue_positions) == 5 and len(red_positions) == 5:
-                chosen_radius = radius
                 break
 
         for (x, y), number in zip(blue_positions, blue_numbers):

@@ -16,6 +16,7 @@ class PixelField:
         self.penalty_spots = []
         self.line_color = (245, 245, 245)
         self.line_width = 4
+        self.goal_highlight_color = (255, 230, 120, 80)
         self.bounds = None
         self.center = (screen_width / 2, screen_height / 2)
         self._build()
@@ -143,6 +144,16 @@ class PixelField:
                 box[3],
                 self.line_color,
                 self.line_width
+            )
+        for box in self.goal_boxes:
+            left = box[0] - box[2] / 2
+            bottom = box[1] - box[3] / 2
+            arcade.draw_lbwh_rectangle_filled(
+                left,
+                bottom,
+                box[2],
+                box[3],
+                self.goal_highlight_color
             )
         for box in self.goal_boxes:
             left = box[0] - box[2] / 2
