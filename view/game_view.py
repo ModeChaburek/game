@@ -1,6 +1,7 @@
 import os
 import sys
 import random
+import math
 
 ROOT_DIR = os.path.dirname(os.path.dirname(__file__))
 if ROOT_DIR not in sys.path:
@@ -13,6 +14,8 @@ from menus.pause_menu import PauseMenu
 from view.field import PixelField
 from view.ball import Ball
 from view.player import Player
+from view import physics
+from view import locale
 
 
 class GameView(arcade.View):
@@ -39,7 +42,84 @@ class GameView(arcade.View):
         )
         self.field = PixelField(SCREEN_WIDTH, SCREEN_HEIGHT)
         self.ball = Ball(self.field.center[0], self.field.center[1])
-        self.players = self._create_players()
+        blue_color, red_color = self._team_colors()
+        self.team_colors = {"blue": blue_color, "red": red_color}
+        self.players = self._create_players(blue_color, red_color)
+
+        self.teams = ("blue", "red")
+        self.turn_index = 0
+        self.current_team = self.teams[self.turn_index]
+        self.selected_player = None
+        self.shot_in_progress = False
+        self.aim_position = None
+        self.shot_power = 4.0
+        self.shot_max_speed = 650.0
+        self.ball_max_speed = 900.0
+        self.player_max_speed = 720.0
+
+        self.scores = {"blue": 0, "red": 0}
+        self.max_score = 3
+        self.game_over = False
+        self.winner_team = None
+        self.last_shooter_team = None
+        self.last_shooter_player = None
+        self.goal_timer = 0.0
+
+        self.turn_text = arcade.Text(
+            "",
+            10,
+            SCREEN_HEIGHT - 20,
+            arcade.color.WHITE,
+            18,
+            anchor_x="left",
+            anchor_y="center"
+        )
+        self.status_text = arcade.Text(
+            "",
+            10,
+            SCREEN_HEIGHT - 45,
+            arcade.color.WHITE,
+            14,
+            anchor_x="left",
+            anchor_y="center"
+        )
+        self.score_text = arcade.Text(
+            "",
+            10,
+            SCREEN_HEIGHT - 70,
+            arcade.color.WHITE,
+            16,
+            anchor_x="left",
+            anchor_y="center"
+        )
+        self.goal_text = arcade.Text(
+            locale.GOAL_TEXT,
+            SCREEN_WIDTH // 2,
+            SCREEN_HEIGHT // 2,
+            arcade.color.YELLOW,
+            48,
+            anchor_x="center",
+            anchor_y="center"
+        )
+        self.winner_text = arcade.Text(
+            "",
+            SCREEN_WIDTH // 2,
+            SCREEN_HEIGHT // 2 + 40,
+            arcade.color.WHITE,
+            36,
+            anchor_x="center",
+            anchor_y="center"
+        )
+        self.restart_text = arcade.Text(
+            locale.RESTART_TEXT,
+            SCREEN_WIDTH // 2,
+            SCREEN_HEIGHT // 2 - 20,
+            arcade.color.WHITE,
+            18,
+            anchor_x="center",
+            anchor_y="center"
+        )
+        self._update_hud()
 
     def _team_colors(self):
         options = settings.TEAM_COLOR_OPTIONS
@@ -137,13 +217,12 @@ class GameView(arcade.View):
         random.shuffle(candidates)
         return candidates[:count]
 
-    def _create_players(self):
+    def _create_players(self, blue_color, red_color):
         numbers = random.sample(range(1, 100), 10)
         blue_numbers = numbers[:5]
         red_numbers = numbers[5:]
 
         players = []
-        blue_color, red_color = self._team_colors()
 
         target_radius = self.ball.radius
         max_radius = target_radius
@@ -163,16 +242,184 @@ class GameView(arcade.View):
                 break
 
         for (x, y), number in zip(blue_positions, blue_numbers):
-            players.append(Player(x, y, chosen_radius, blue_color, number))
+            players.append(Player(x, y, chosen_radius, blue_color, number, "blue"))
 
         for (x, y), number in zip(red_positions, red_numbers):
-            players.append(Player(x, y, chosen_radius, red_color, number))
+            players.append(Player(x, y, chosen_radius, red_color, number, "red"))
 
         return players
+
+    def _update_hud(self):
+        team_name = locale.TEAM_NAMES[self.current_team]
+        self.turn_text.text = locale.TURN_LABEL.format(team=team_name)
+        self.turn_text.color = self.team_colors[self.current_team]
+        self.score_text.text = locale.SCORE_LABEL.format(
+            blue=self.scores["blue"],
+            red=self.scores["red"]
+        )
+        if self.game_over:
+            winner_name = locale.TEAM_NAMES.get(self.winner_team, "")
+            self.status_text.text = locale.WINNER_TEXT.format(team=winner_name)
+        elif self.paused:
+            self.status_text.text = locale.STATUS_PAUSE
+        elif self.shot_in_progress:
+            self.status_text.text = locale.STATUS_SHOT
+        elif self.selected_player is None:
+            self.status_text.text = locale.STATUS_SELECT_PLAYER.format(team=team_name)
+        else:
+            self.status_text.text = locale.STATUS_SELECT_TARGET
+
+    def _player_at(self, x, y, team=None):
+        for player in self.players:
+            if team is not None and player.team != team:
+                continue
+            dx = x - player.center_x
+            dy = y - player.center_y
+            if dx * dx + dy * dy <= player.radius * player.radius:
+                return player
+        return None
+
+    def _limit_entity_speed(self, entity, max_speed):
+        vx, vy = physics.limit_speed(entity.velocity[0], entity.velocity[1], max_speed)
+        entity.velocity[0] = vx
+        entity.velocity[1] = vy
+        entity.refresh_movable()
+
+    def _start_shot(self, player, target_x, target_y):
+        dx = target_x - player.center_x
+        dy = target_y - player.center_y
+        distance = math.hypot(dx, dy)
+        if distance < 1:
+            return False
+
+        speed = min(self.shot_max_speed, distance * self.shot_power)
+        vx = dx / distance * speed
+        vy = dy / distance * speed
+        player.set_velocity(vx, vy)
+        self._limit_entity_speed(player, self.player_max_speed)
+        self.last_shooter_team = player.team
+        self.last_shooter_player = player
+        self.shot_in_progress = True
+        return True
+
+    def _apply_player_ball_collision(self, player):
+        if self.ball is None:
+            return
+
+        if physics.resolve_circle_collision(self.ball, player, restitution=0.85):
+            self._limit_entity_speed(self.ball, self.ball_max_speed)
+            self._limit_entity_speed(player, self.player_max_speed)
+
+    def _apply_player_player_collisions(self):
+        total = len(self.players)
+        for i in range(total):
+            for j in range(i + 1, total):
+                if physics.resolve_circle_collision(
+                    self.players[i],
+                    self.players[j],
+                    restitution=0.6
+                ):
+                    self._limit_entity_speed(self.players[i], self.player_max_speed)
+                    self._limit_entity_speed(self.players[j], self.player_max_speed)
+
+    def _anything_moving(self):
+        if self.ball and self.ball.is_moving():
+            return True
+        return any(player.is_moving() for player in self.players)
+
+    def _advance_turn(self):
+        self.turn_index = (self.turn_index + 1) % len(self.teams)
+        self.current_team = self.teams[self.turn_index]
+        self.selected_player = None
+        self.aim_position = None
+        self.shot_in_progress = False
+        self._update_hud()
+
+    def _reset_players_positions(self):
+        if not self.players:
+            return
+        radius = self.players[0].radius
+        blue_players = [p for p in self.players if p.team == "blue"]
+        red_players = [p for p in self.players if p.team == "red"]
+
+        blue_positions = self._random_positions("left", len(blue_players), radius)
+        red_positions = self._random_positions("right", len(red_players), radius)
+        if len(blue_positions) != len(blue_players) or len(red_positions) != len(red_players):
+            return
+
+        for player, (x, y) in zip(blue_players, blue_positions):
+            player.reset_position(x, y)
+        for player, (x, y) in zip(red_players, red_positions):
+            player.reset_position(x, y)
+
+    def _set_current_team(self, team):
+        if team in self.teams:
+            self.turn_index = self.teams.index(team)
+            self.current_team = team
+
+    def _reset_round(self, next_team):
+        self.ball.reset(self.field.center[0], self.field.center[1])
+        self._reset_players_positions()
+        self.selected_player = None
+        self.aim_position = None
+        self.shot_in_progress = False
+        self.last_shooter_team = None
+        self.last_shooter_player = None
+        self._set_current_team(next_team)
+        self._update_hud()
+
+    def _register_goal(self, scoring_team):
+        if self.game_over:
+            return
+        self.scores[scoring_team] += 1
+        if self.last_shooter_player and self.last_shooter_player.team == scoring_team:
+            self.last_shooter_player.score += 1
+        self.goal_timer = 1.4
+        self.goal_text.text = f"{locale.GOAL_TEXT} {locale.TEAM_NAMES[scoring_team]}!"
+        if self.scores[scoring_team] >= self.max_score:
+            self._end_game(scoring_team)
+            return
+        next_team = "red" if scoring_team == "blue" else "blue"
+        self._reset_round(next_team)
+
+    def _check_goal(self):
+        if self.ball is None:
+            return
+        side = self.field.goal_side(self.ball.center_x, self.ball.center_y)
+        if side is None:
+            return
+        scoring_team = "red" if side == "left" else "blue"
+        self._register_goal(scoring_team)
+
+    def _end_game(self, winner_team):
+        self.game_over = True
+        self.winner_team = winner_team
+        self.shot_in_progress = False
+        self.selected_player = None
+        self.aim_position = None
+        if self.ball:
+            self.ball.set_velocity(0.0, 0.0)
+        for player in self.players:
+            player.set_velocity(0.0, 0.0)
+        self._update_hud()
+        winner_name = locale.TEAM_NAMES.get(winner_team, "")
+        self.winner_text.text = locale.WINNER_TEXT.format(team=winner_name)
+
+    def _restart_game(self):
+        self.scores = {"blue": 0, "red": 0}
+        self.game_over = False
+        self.winner_team = None
+        self.turn_index = 0
+        self.current_team = self.teams[self.turn_index]
+        self.winner_text.text = ""
+        self.time = 0
+        self.time_text.text = "Время: 0"
+        self._reset_round(self.current_team)
 
     def on_show_view(self):
         arcade.set_background_color(arcade.color.BLACK)
         self._start_music()
+        self._update_hud()
         if self.paused:
             self.pause_menu.manager.enable()
         else:
@@ -197,11 +444,27 @@ class GameView(arcade.View):
         self._stop_music()
 
     def on_update(self, delta_time):
-        if not self.paused:
-            self.time += delta_time
-            self.time_text.text = f"Время: {int(self.time)}"
-            if self.ball:
-                self.ball.update(delta_time, self.field.bounds)
+        if self.goal_timer > 0:
+            self.goal_timer = max(0.0, self.goal_timer - delta_time)
+
+        if self.paused or self.game_over:
+            self._update_hud()
+            return
+
+        self.time += delta_time
+        self.time_text.text = f"Время: {int(self.time)}"
+        if self.ball:
+            self.ball.update(delta_time, self.field.bounds)
+        for player in self.players:
+            player.update(delta_time, self.field.bounds)
+        self._apply_player_player_collisions()
+        for player in self.players:
+            self._apply_player_ball_collision(player)
+        self._check_goal()
+        if self.shot_in_progress and not self._anything_moving():
+            self._advance_turn()
+        else:
+            self._update_hud()
 
     def on_draw(self):
         self.clear()
@@ -209,10 +472,36 @@ class GameView(arcade.View):
         self.field.draw()
         for player in self.players:
             player.draw()
+        if self.selected_player and not self.paused and not self.game_over:
+            arcade.draw_circle_outline(
+                self.selected_player.center_x,
+                self.selected_player.center_y,
+                self.selected_player.radius + 4,
+                arcade.color.YELLOW,
+                3
+            )
+            if self.aim_position and not self.shot_in_progress:
+                arcade.draw_line(
+                    self.selected_player.center_x,
+                    self.selected_player.center_y,
+                    self.aim_position[0],
+                    self.aim_position[1],
+                    arcade.color.YELLOW,
+                    2
+                )
         if self.ball:
             self.ball.draw()
 
         self.time_text.draw()
+        self.turn_text.draw()
+        self.status_text.draw()
+        self.score_text.draw()
+
+        if self.goal_timer > 0:
+            self.goal_text.draw()
+        if self.game_over:
+            self.winner_text.draw()
+            self.restart_text.draw()
 
         if self.paused:
             arcade.draw_lrbt_rectangle_filled(
@@ -221,12 +510,49 @@ class GameView(arcade.View):
             self.pause_menu.manager.draw()
 
     def on_key_press(self, key, modifiers):
+        if self.game_over:
+            if key == arcade.key.R:
+                self._restart_game()
+            return
         if key == arcade.key.ESCAPE:
             self.paused = not self.paused
             if self.paused:
                 self.pause_menu.manager.enable()
             else:
                 self.pause_menu.manager.disable()
+            self._update_hud()
+
+    def on_mouse_press(self, x, y, button, modifiers):
+        if self.paused or self.shot_in_progress or self.game_over:
+            return
+
+        if button == arcade.MOUSE_BUTTON_RIGHT:
+            self.selected_player = None
+            self.aim_position = None
+            self._update_hud()
+            return
+
+        if button != arcade.MOUSE_BUTTON_LEFT:
+            return
+
+        player = self._player_at(x, y, team=self.current_team)
+        if player is not None:
+            self.selected_player = player
+            self.aim_position = (x, y)
+            self._update_hud()
+            return
+
+        if self.selected_player is not None:
+            if self._start_shot(self.selected_player, x, y):
+                self.selected_player = None
+                self.aim_position = None
+                self._update_hud()
+
+    def on_mouse_motion(self, x, y, dx, dy):
+        if self.paused or self.shot_in_progress or self.game_over:
+            return
+        if self.selected_player is not None:
+            self.aim_position = (x, y)
 
     def resume(self):
         self.paused = False

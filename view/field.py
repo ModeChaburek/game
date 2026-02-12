@@ -173,3 +173,15 @@ class PixelField:
                 self.center_dot_radius,
                 self.line_color
             )
+
+    def goal_side(self, x, y):
+        if not self.goal_boxes:
+            return None
+        for idx, box in enumerate(self.goal_boxes):
+            left = box[0] - box[2] / 2
+            right = box[0] + box[2] / 2
+            bottom = box[1] - box[3] / 2
+            top = box[1] + box[3] / 2
+            if left <= x <= right and bottom <= y <= top:
+                return "left" if idx == 0 else "right"
+        return None
