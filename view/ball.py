@@ -2,7 +2,7 @@ import arcade
 
 
 class Ball:
-    def __init__(self, center_x, center_y, radius=30, color=arcade.color.WHITE):
+    def __init__(self, center_x, center_y, radius=20, color=arcade.color.WHITE):
         self.radius = radius
         self.color_white = arcade.color.WHITE
         self.color_black = arcade.color.BLACK
