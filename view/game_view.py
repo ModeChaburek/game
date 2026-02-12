@@ -41,10 +41,6 @@ class GameView(arcade.View):
             on_settings=self.go_to_settings
         )
         self.field = PixelField(SCREEN_WIDTH, SCREEN_HEIGHT)
-        self.ball = Ball(self.field.center[0], self.field.center[1])
-        blue_color, red_color = self._team_colors()
-        self.team_colors = {"blue": blue_color, "red": red_color}
-        self.players = self._create_players(blue_color, red_color)
 
         self.teams = ("blue", "red")
         self.turn_index = 0
@@ -56,6 +52,14 @@ class GameView(arcade.View):
         self.shot_max_speed = 650.0
         self.ball_max_speed = 900.0
         self.player_max_speed = 720.0
+        self.max_substeps = 6
+        self.players_per_team = 8
+
+        self.ball = Ball(self.field.center[0], self.field.center[1])
+        self.max_move_per_step = max(8.0, self.ball.radius * 0.6)
+        blue_color, red_color = self._team_colors()
+        self.team_colors = {"blue": blue_color, "red": red_color}
+        self.players = self._create_players(blue_color, red_color)
 
         self.scores = {"blue": 0, "red": 0}
         self.max_score = 3
@@ -172,11 +176,11 @@ class GameView(arcade.View):
         if x_max <= x_min or y_max <= y_min:
             return []
 
-        min_distance = radius * 20 + 1
+        min_distance = radius * 2.4
         min_distance_sq = min_distance * min_distance
         positions = []
         attempts = 0
-        max_attempts = 15000
+        max_attempts = 25000
 
         while len(positions) < count and attempts < max_attempts:
             attempts += 1
@@ -218,27 +222,28 @@ class GameView(arcade.View):
         return candidates[:count]
 
     def _create_players(self, blue_color, red_color):
-        numbers = random.sample(range(1, 100), 10)
-        blue_numbers = numbers[:5]
-        red_numbers = numbers[5:]
+        total_players = self.players_per_team * 2
+        numbers = random.sample(range(1, 100), total_players)
+        blue_numbers = numbers[:self.players_per_team]
+        red_numbers = numbers[self.players_per_team:]
 
         players = []
 
-        target_radius = self.ball.radius
+        target_radius = int(self.ball.radius * 0.75)
         max_radius = target_radius
-        min_radius = 4
+        min_radius = 8
         chosen_radius = min_radius
         blue_positions = []
         red_positions = []
 
         for radius in range(max_radius, min_radius - 1, -1):
             for _ in range(6):
-                blue_positions = self._random_positions("left", 5, radius)
-                red_positions = self._random_positions("right", 5, radius)
-                if len(blue_positions) == 5 and len(red_positions) == 5:
+                blue_positions = self._random_positions("left", self.players_per_team, radius)
+                red_positions = self._random_positions("right", self.players_per_team, radius)
+                if len(blue_positions) == self.players_per_team and len(red_positions) == self.players_per_team:
                     chosen_radius = radius
                     break
-            if len(blue_positions) == 5 and len(red_positions) == 5:
+            if len(blue_positions) == self.players_per_team and len(red_positions) == self.players_per_team:
                 break
 
         for (x, y), number in zip(blue_positions, blue_numbers):
@@ -305,6 +310,8 @@ class GameView(arcade.View):
     def _apply_player_ball_collision(self, player):
         if self.ball is None:
             return
+        if not self.ball.is_moving() and not player.is_moving():
+            return
 
         if physics.resolve_circle_collision(self.ball, player, restitution=0.85):
             self._limit_entity_speed(self.ball, self.ball_max_speed)
@@ -314,6 +321,8 @@ class GameView(arcade.View):
         total = len(self.players)
         for i in range(total):
             for j in range(i + 1, total):
+                if not self.players[i].is_moving() and not self.players[j].is_moving():
+                    continue
                 if physics.resolve_circle_collision(
                     self.players[i],
                     self.players[j],
@@ -384,12 +393,13 @@ class GameView(arcade.View):
 
     def _check_goal(self):
         if self.ball is None:
-            return
+            return False
         side = self.field.goal_side(self.ball.center_x, self.ball.center_y)
         if side is None:
-            return
+            return False
         scoring_team = "red" if side == "left" else "blue"
         self._register_goal(scoring_team)
+        return True
 
     def _end_game(self, winner_team):
         self.game_over = True
@@ -453,18 +463,37 @@ class GameView(arcade.View):
 
         self.time += delta_time
         self.time_text.text = f"Время: {int(self.time)}"
-        if self.ball:
-            self.ball.update(delta_time, self.field.bounds)
-        for player in self.players:
-            player.update(delta_time, self.field.bounds)
-        self._apply_player_player_collisions()
-        for player in self.players:
-            self._apply_player_ball_collision(player)
-        self._check_goal()
-        if self.shot_in_progress and not self._anything_moving():
-            self._advance_turn()
-        else:
+
+        if not self._anything_moving() and not self.shot_in_progress:
             self._update_hud()
+            return
+
+        max_speed = 0.0
+        if self.ball:
+            max_speed = max(max_speed, self.ball.speed())
+        for player in self.players:
+            max_speed = max(max_speed, player.speed())
+        steps = 1
+        if max_speed > 0:
+            steps = int(math.ceil((max_speed * delta_time) / self.max_move_per_step))
+            steps = max(1, min(self.max_substeps, steps))
+        step_dt = delta_time / steps
+
+        for _ in range(steps):
+            if self.ball:
+                self.ball.update(step_dt, self.field.bounds)
+            for player in self.players:
+                player.update(step_dt, self.field.bounds)
+            self._apply_player_player_collisions()
+            for player in self.players:
+                self._apply_player_ball_collision(player)
+            if self._check_goal():
+                break
+            if self.shot_in_progress and not self._anything_moving():
+                self._advance_turn()
+                break
+
+        self._update_hud()
 
     def on_draw(self):
         self.clear()
