@@ -2,6 +2,7 @@ import arcade
 from arcade.gui import UIAnchorLayout, UIBoxLayout, UIFlatButton, UIManager
 from settings import SCREEN_WIDTH, SCREEN_HEIGHT
 from view.game_view import GameView
+from view.rating_view import RatingView
 from view.setting_view import Setting_Menu_View
 
 
@@ -35,6 +36,11 @@ class MenuView(arcade.View):
             width=200
         )
 
+        rating_button = UIFlatButton(
+            text="Рейтинг",
+            width=200
+        )
+
         setting_button = UIFlatButton(
             text="Настройки",
             width=200
@@ -51,6 +57,12 @@ class MenuView(arcade.View):
             self.window.show_view(game_view)
             print("Играть нажато")
 
+        @rating_button.event("on_click")
+        def on_rating_click(event):
+            rating_view = RatingView(return_view=self)
+            self.window.show_view(rating_view)
+            print("Рейтинг")
+
         @setting_button.event("on_click")
         def on_settings_click(event):
             setting_menu_view = Setting_Menu_View(return_view=self)
@@ -62,6 +74,7 @@ class MenuView(arcade.View):
             arcade.close_window()
 
         self.box_layout.add(play_button)
+        self.box_layout.add(rating_button)
         self.box_layout.add(setting_button)
         self.box_layout.add(exit_button)
 

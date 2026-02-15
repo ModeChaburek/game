@@ -9,6 +9,7 @@ if ROOT_DIR not in sys.path:
 
 import arcade
 import settings
+import db
 from settings import SCREEN_WIDTH, SCREEN_HEIGHT
 from menus.pause_menu import PauseMenu
 from view.field import PixelField
@@ -64,10 +65,23 @@ class GameView(arcade.View):
         self.scores = {"blue": 0, "red": 0}
         self.max_score = 3
         self.game_over = False
+        self.result_saved = False
         self.winner_team = None
         self.last_shooter_team = None
         self.last_shooter_player = None
         self.goal_timer = 0.0
+        self.firework_particles = []
+        self.firework_flash = 0.0
+        self.firework_colors = [
+            (255, 80, 80),
+            (255, 180, 50),
+            (255, 255, 120),
+            (130, 220, 255),
+            (170, 120, 255),
+            (255, 120, 220),
+            (120, 255, 160),
+            (255, 255, 255),
+        ]
 
         self.turn_text = arcade.Text(
             "",
@@ -254,6 +268,86 @@ class GameView(arcade.View):
 
         return players
 
+    def _spawn_firework_burst(self, x, y, count=60, speed_min=160.0, speed_max=640.0):
+        for _ in range(count):
+            angle = random.uniform(0.0, math.pi * 2)
+            speed = random.uniform(speed_min, speed_max)
+            vx = math.cos(angle) * speed
+            vy = math.sin(angle) * speed
+            radius = random.uniform(2.0, 6.0)
+            life = random.uniform(0.6, 1.2)
+            color = random.choice(self.firework_colors)
+            self.firework_particles.append(
+                {
+                    "x": x,
+                    "y": y,
+                    "vx": vx,
+                    "vy": vy,
+                    "radius": radius,
+                    "life": life,
+                    "color": color,
+                }
+            )
+
+    def _trigger_fireworks(self):
+        self.firework_particles = []
+        bursts = 8
+        for _ in range(bursts):
+            x = random.uniform(0, SCREEN_WIDTH)
+            y = random.uniform(0, SCREEN_HEIGHT)
+            self._spawn_firework_burst(x, y, count=60)
+        self._spawn_firework_burst(
+            SCREEN_WIDTH / 2,
+            SCREEN_HEIGHT / 2,
+            count=120,
+            speed_min=220.0,
+            speed_max=720.0,
+        )
+        self.firework_flash = 1.0
+
+    def _update_fireworks(self, delta_time):
+        if not self.firework_particles and self.firework_flash <= 0:
+            return
+        if self.firework_flash > 0:
+            self.firework_flash = max(0.0, self.firework_flash - delta_time * 2.8)
+        gravity = -260.0
+        new_particles = []
+        for particle in self.firework_particles:
+            particle["life"] -= delta_time
+            if particle["life"] <= 0:
+                continue
+            particle["vx"] *= 0.98
+            particle["vy"] += gravity * delta_time
+            particle["x"] += particle["vx"] * delta_time
+            particle["y"] += particle["vy"] * delta_time
+            if (
+                particle["x"] < -50
+                or particle["x"] > SCREEN_WIDTH + 50
+                or particle["y"] < -50
+                or particle["y"] > SCREEN_HEIGHT + 50
+            ):
+                continue
+            new_particles.append(particle)
+        self.firework_particles = new_particles
+
+    def _draw_fireworks(self):
+        for particle in self.firework_particles:
+            arcade.draw_circle_filled(
+                particle["x"],
+                particle["y"],
+                particle["radius"],
+                particle["color"],
+            )
+        if self.firework_flash > 0:
+            alpha = int(220 * self.firework_flash)
+            arcade.draw_lrbt_rectangle_filled(
+                0,
+                SCREEN_WIDTH,
+                0,
+                SCREEN_HEIGHT,
+                (255, 255, 255, alpha),
+            )
+
     def _update_hud(self):
         team_name = locale.TEAM_NAMES[self.current_team]
         self.turn_text.text = locale.TURN_LABEL.format(team=team_name)
@@ -385,6 +479,7 @@ class GameView(arcade.View):
             self.last_shooter_player.score += 1
         self.goal_timer = 1.4
         self.goal_text.text = f"{locale.GOAL_TEXT} {locale.TEAM_NAMES[scoring_team]}!"
+        self._trigger_fireworks()
         if self.scores[scoring_team] >= self.max_score:
             self._end_game(scoring_team)
             return
@@ -414,10 +509,27 @@ class GameView(arcade.View):
         self._update_hud()
         winner_name = locale.TEAM_NAMES.get(winner_team, "")
         self.winner_text.text = locale.WINNER_TEXT.format(team=winner_name)
+        self._save_result()
+
+    def _save_result(self):
+        if self.result_saved:
+            return
+        player1 = locale.TEAM_NAMES.get("blue", "\u0418\u0433\u0440\u043e\u043a 1")
+        player2 = locale.TEAM_NAMES.get("red", "\u0418\u0433\u0440\u043e\u043a 2")
+        score1 = self.scores.get("blue", 0)
+        score2 = self.scores.get("red", 0)
+        try:
+            db.add_game_result(player1, player2, score1, score2)
+            self.result_saved = True
+        except Exception as exc:
+            print(f"DB error: {exc}")
 
     def _restart_game(self):
         self.scores = {"blue": 0, "red": 0}
         self.game_over = False
+        self.result_saved = False
+        self.firework_particles = []
+        self.firework_flash = 0.0
         self.winner_team = None
         self.turn_index = 0
         self.current_team = self.teams[self.turn_index]
@@ -456,6 +568,8 @@ class GameView(arcade.View):
     def on_update(self, delta_time):
         if self.goal_timer > 0:
             self.goal_timer = max(0.0, self.goal_timer - delta_time)
+
+        self._update_fireworks(delta_time)
 
         if self.paused or self.game_over:
             self._update_hud()
@@ -520,6 +634,8 @@ class GameView(arcade.View):
                 )
         if self.ball:
             self.ball.draw()
+
+        self._draw_fireworks()
 
         self.time_text.draw()
         self.turn_text.draw()
